@@ -8,6 +8,7 @@ import {
   type StoragePort,
 } from "@gleam/core";
 import { userErrorMessage } from "@gleam/core/src/models/user-errors.ts";
+import { zeroize } from "@gleam/core/signer";
 
 const PASSKEY_KEY = "local:passkey";
 
@@ -73,7 +74,13 @@ export class PasskeyHandler {
     if (req.credentialId.length === 0 || req.prfSalt.length === 0) {
       throw new Error(userErrorMessage("passkeyBadResponse"));
     }
-    const wrapped = await wrapWithPasskey(req.password, decodePrfOutput(req.prfOutput), req.credentialId);
+    const prfOutput = decodePrfOutput(req.prfOutput);
+    let wrapped: Awaited<ReturnType<typeof wrapWithPasskey>>;
+    try {
+      wrapped = await wrapWithPasskey(req.password, prfOutput, req.credentialId);
+    } finally {
+      zeroize(prfOutput);
+    }
     const enrollment: PasskeyEnrollment = {
       version: 1,
       credentialId: req.credentialId,
@@ -93,7 +100,13 @@ export class PasskeyHandler {
     if (enrollment.credentialId !== req.credentialId) {
       throw new Error(userErrorMessage("passkeyWrongCredential"));
     }
-    const password = await unwrapWithPasskey(enrollment, decodePrfOutput(req.prfOutput), enrollment.credentialId);
+    const prfOutput = decodePrfOutput(req.prfOutput);
+    let password: string;
+    try {
+      password = await unwrapWithPasskey(enrollment, prfOutput, enrollment.credentialId);
+    } finally {
+      zeroize(prfOutput);
+    }
     try {
       return await this.vault.unlockWallet({ password });
     } catch (error) {
